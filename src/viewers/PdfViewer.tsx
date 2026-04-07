@@ -605,7 +605,6 @@ export function PdfViewer({ file, onBack }: PdfViewerProps) {
         currentPage={page}
         totalPages={totalPages}
         displayMode={displayMode}
-        onPageJump={(p) => navigateToPage(p)}
         onDisplayModeChange={setDisplayMode}
         zoom={zoom}
       />
