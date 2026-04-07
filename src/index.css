@@ -113,7 +113,7 @@
   text-align: initial;
   inset: 0;
   overflow: hidden;
-  opacity: 0.25;
+  opacity: 1;
   line-height: 1;
   text-size-adjust: none;
   forced-color-adjust: none;
@@ -148,7 +148,7 @@
 }
 
 .textLayer ::selection {
-  background: hsl(var(--primary) / 0.35);
+  background: rgba(236, 228, 0, 0.35);
 }
 
 .textLayer br::selection {

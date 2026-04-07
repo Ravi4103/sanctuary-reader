@@ -3,10 +3,13 @@ import * as pdfjsLib from "pdfjs-dist";
 import { ListTree } from "lucide-react";
 import { DocumentTocSidebar, type TocItem } from "@/components/DocumentTocSidebar";
 import { ViewerToolbar } from "@/components/ViewerToolbar";
+import { PdfSettingsPanel, defaultSettings, type PdfSettings } from "@/components/PdfSettingsPanel";
 import { Button } from "@/components/ui/button";
 import type { FileEntry } from "@/lib/fileStore";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
+
+/* ── TOC helpers ─────────────────────────────────────────────────── */
 
 interface PdfTocItem extends TocItem {
   children?: PdfTocItem[];
@@ -18,26 +21,12 @@ interface PdfTocItem extends TocItem {
 type PageSetter = Dispatch<SetStateAction<number>>;
 
 async function resolvePdfDestination(doc: pdfjsLib.PDFDocumentProxy, dest: any): Promise<number | null> {
-  if (!dest) {
-    return null;
-  }
-
+  if (!dest) return null;
   const resolvedDest = typeof dest === "string" ? await doc.getDestination(dest) : dest;
-
-  if (!Array.isArray(resolvedDest) || resolvedDest.length === 0) {
-    return null;
-  }
-
+  if (!Array.isArray(resolvedDest) || resolvedDest.length === 0) return null;
   const target = resolvedDest[0];
-
-  if (typeof target === "number") {
-    return target + 1;
-  }
-
-  if (target && typeof target === "object") {
-    return (await doc.getPageIndex(target)) + 1;
-  }
-
+  if (typeof target === "number") return target + 1;
+  if (target && typeof target === "object") return (await doc.getPageIndex(target)) + 1;
   return null;
 }
 
@@ -50,7 +39,6 @@ async function mapPdfOutlineItems(
     outline.map(async (item, index) => {
       const id = `${prefix}-${index}`;
       const pageNumber = item.dest ? await resolvePdfDestination(doc, item.dest).catch(() => null) : null;
-
       return {
         id,
         label: item.title?.trim() || "Untitled section",
@@ -68,58 +56,75 @@ function flattenPdfTocItems(items: PdfTocItem[]): PdfTocItem[] {
   return items.flatMap((item) => [item, ...flattenPdfTocItems(item.children ?? [])]);
 }
 
-function createPdfLinkService(
-  doc: pdfjsLib.PDFDocumentProxy,
-  setPage: PageSetter,
-  totalPages: number,
-) {
-  const goToPage = (target: number) => setPage(Math.max(1, Math.min(totalPages, target)));
+/* ── Link service ────────────────────────────────────────────────── */
 
+function createPdfLinkService(doc: pdfjsLib.PDFDocumentProxy, setPage: PageSetter, totalPages: number) {
+  const goToPage = (target: number) => setPage(Math.max(1, Math.min(totalPages, target)));
   return {
     addLinkAttributes(link: HTMLAnchorElement, url: string, newWindow?: boolean) {
       link.href = url;
       link.target = newWindow ? "_blank" : "_self";
       link.rel = "noopener noreferrer";
     },
-    eventBus: {
-      dispatch: () => undefined,
-    },
+    eventBus: { dispatch: () => undefined },
     executeNamedAction(action: string) {
       switch (action) {
-        case "NextPage":
-          setPage((current) => Math.min(totalPages, current + 1));
-          break;
-        case "PrevPage":
-          setPage((current) => Math.max(1, current - 1));
-          break;
-        case "FirstPage":
-          goToPage(1);
-          break;
-        case "LastPage":
-          goToPage(totalPages);
-          break;
-        default:
-          break;
+        case "NextPage": setPage((c) => Math.min(totalPages, c + 1)); break;
+        case "PrevPage": setPage((c) => Math.max(1, c - 1)); break;
+        case "FirstPage": goToPage(1); break;
+        case "LastPage": goToPage(totalPages); break;
       }
     },
-    executeSetOCGState() {
-      return undefined;
-    },
-    getAnchorUrl(hash: string) {
-      return hash || "#";
-    },
-    getDestinationHash() {
-      return "#";
-    },
+    executeSetOCGState() { return undefined; },
+    getAnchorUrl(hash: string) { return hash || "#"; },
+    getDestinationHash() { return "#"; },
     async goToDestination(dest: unknown) {
-      const pageNumber = await resolvePdfDestination(doc, dest).catch(() => null);
-
-      if (pageNumber) {
-        goToPage(pageNumber);
-      }
+      const p = await resolvePdfDestination(doc, dest).catch(() => null);
+      if (p) goToPage(p);
     },
   };
 }
+
+/* ── Background filter helpers ───────────────────────────────────── */
+
+function getPageFilter(settings: PdfSettings): string {
+  const parts: string[] = [];
+  if (settings.brightness !== 100) parts.push(`brightness(${settings.brightness / 100})`);
+  if (settings.invertColors) parts.push("invert(1) hue-rotate(180deg)");
+  if (settings.pageBackground === "sepia") parts.push("sepia(0.3)");
+  if (settings.pageBackground === "warm") parts.push("sepia(0.15) saturate(1.1)");
+  if (settings.pageBackground === "cool") parts.push("hue-rotate(15deg) saturate(0.9)");
+  return parts.length ? parts.join(" ") : "none";
+}
+
+/* ── Print helper ────────────────────────────────────────────────── */
+
+async function printPdf(pdfDoc: pdfjsLib.PDFDocumentProxy) {
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) return;
+
+  printWindow.document.write("<html><head><title>Print PDF</title><style>@media print { @page { margin: 0; } body { margin: 0; } canvas { page-break-after: always; display: block; width: 100%; } canvas:last-child { page-break-after: auto; } } body { margin: 0; background: white; }</style></head><body></body></html>");
+  printWindow.document.close();
+
+  for (let i = 1; i <= pdfDoc.numPages; i++) {
+    const page = await pdfDoc.getPage(i);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = printWindow.document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) continue;
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    printWindow.document.body.appendChild(canvas);
+  }
+
+  setTimeout(() => {
+    printWindow.focus();
+    printWindow.print();
+  }, 500);
+}
+
+/* ── Component ───────────────────────────────────────────────────── */
 
 interface PdfViewerProps {
   file: FileEntry;
@@ -133,93 +138,61 @@ export function PdfViewer({ file, onBack }: PdfViewerProps) {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [zoom, setZoom] = useState(1.2);
+  const [rotation, setRotation] = useState(0);
   const [showToc, setShowToc] = useState(false);
   const [tocItems, setTocItems] = useState<PdfTocItem[]>([]);
+  const [settings, setSettings] = useState<PdfSettings>(defaultSettings);
 
+  /* Load PDF */
   useEffect(() => {
     let cancelled = false;
     const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(file.data) });
 
     loadingTask.promise
       .then(async (doc) => {
-        if (cancelled) {
-          return;
-        }
-
+        if (cancelled) return;
         setPdf(doc);
         setTotalPages(doc.numPages);
-
         const outline = await doc.getOutline();
-
-        if (!cancelled) {
-          setTocItems(outline ? await mapPdfOutlineItems(doc, outline) : []);
-        }
+        if (!cancelled) setTocItems(outline ? await mapPdfOutlineItems(doc, outline) : []);
       })
-      .catch((error) => {
-        if (!cancelled) {
-          console.error("Failed to load PDF", error);
-        }
-      });
+      .catch((error) => { if (!cancelled) console.error("Failed to load PDF", error); });
 
-    return () => {
-      cancelled = true;
-      loadingTask.destroy();
-    };
+    return () => { cancelled = true; loadingTask.destroy(); };
   }, [file.data]);
 
+  /* TOC */
   const flatTocItems = useMemo(() => flattenPdfTocItems(tocItems), [tocItems]);
-
   const activeTocId = useMemo(() => {
-    let currentId: string | null = null;
-
-    for (const item of flatTocItems) {
-      if (item.page && item.page <= page) {
-        currentId = item.id;
-      }
-    }
-
-    return currentId;
+    let id: string | null = null;
+    for (const item of flatTocItems) { if (item.page && item.page <= page) id = item.id; }
+    return id;
   }, [flatTocItems, page]);
 
-  const handleTocSelect = useCallback(
-    async (item: TocItem) => {
-      const tocItem = item as PdfTocItem;
+  const handleTocSelect = useCallback(async (item: TocItem) => {
+    const tocItem = item as PdfTocItem;
+    if (tocItem.url) { window.open(tocItem.url, "_blank", "noopener,noreferrer"); return; }
+    if (!pdf) return;
+    const p = tocItem.page ?? (await resolvePdfDestination(pdf, tocItem.dest).catch(() => null));
+    if (p) setPage(p);
+    if (window.innerWidth < 768) setShowToc(false);
+  }, [pdf]);
 
-      if (tocItem.url) {
-        window.open(tocItem.url, "_blank", "noopener,noreferrer");
-        return;
-      }
-
-      if (!pdf) {
-        return;
-      }
-
-      const pageNumber = tocItem.page ?? (await resolvePdfDestination(pdf, tocItem.dest).catch(() => null));
-
-      if (pageNumber) {
-        setPage(pageNumber);
-      }
-
-      if (window.innerWidth < 768) {
-        setShowToc(false);
-      }
-    },
-    [pdf],
-  );
-
+  /* Fit width */
   const handleFitWidth = useCallback(async () => {
-    if (!pdf || !viewportRef.current) {
-      return;
-    }
-
+    if (!pdf || !viewportRef.current) return;
     const currentPage = await pdf.getPage(page);
     const baseViewport = currentPage.getViewport({ scale: 1 });
     const availableWidth = Math.max(viewportRef.current.clientWidth - 32, 240);
-    const nextZoom = Math.max(0.4, Math.min(3, availableWidth / baseViewport.width));
-
-    setZoom(nextZoom);
+    setZoom(Math.max(0.4, Math.min(3, availableWidth / baseViewport.width)));
   }, [page, pdf]);
 
+  /* Auto fit width on setting change */
+  useEffect(() => {
+    if (settings.autoFitWidth) handleFitWidth();
+  }, [settings.autoFitWidth, handleFitWidth]);
+
+  /* Render page */
   useEffect(() => {
     if (!pdf || !containerRef.current) return;
     let cancelled = false;
@@ -231,7 +204,7 @@ export function PdfViewer({ file, onBack }: PdfViewerProps) {
       if (!container) return;
 
       const pdfPage = await pdf.getPage(page);
-      const viewport = pdfPage.getViewport({ scale: zoom });
+      const viewport = pdfPage.getViewport({ scale: zoom, rotation });
       const outputScale = window.devicePixelRatio || 1;
 
       const wrapper = document.createElement("div");
@@ -239,6 +212,9 @@ export function PdfViewer({ file, onBack }: PdfViewerProps) {
       wrapper.style.width = `${viewport.width}px`;
       wrapper.style.height = `${viewport.height}px`;
       wrapper.style.setProperty("--scale-factor", `${viewport.scale}`);
+
+      const filter = getPageFilter(settings);
+      if (filter !== "none") wrapper.style.filter = filter;
 
       const canvas = document.createElement("canvas");
       canvas.className = "pdf-canvas";
@@ -249,25 +225,29 @@ export function PdfViewer({ file, onBack }: PdfViewerProps) {
 
       const ctx = canvas.getContext("2d", { alpha: false });
       if (!ctx) return;
-
       wrapper.appendChild(canvas);
 
-      const textDiv = document.createElement("div");
-      textDiv.className = "textLayer";
-      textDiv.style.setProperty("--scale-factor", `${viewport.scale}`);
-      wrapper.appendChild(textDiv);
+      /* Text layer */
+      if (settings.enableTextSelection) {
+        const textDiv = document.createElement("div");
+        textDiv.className = "textLayer";
+        textDiv.style.setProperty("--scale-factor", `${viewport.scale}`);
+        wrapper.appendChild(textDiv);
+      }
 
-      const annotationDiv = document.createElement("div");
-      annotationDiv.className = "annotationLayer";
-      annotationDiv.style.setProperty("--scale-factor", `${viewport.scale}`);
-      wrapper.appendChild(annotationDiv);
+      /* Annotation layer */
+      if (settings.showAnnotations) {
+        const annotationDiv = document.createElement("div");
+        annotationDiv.className = "annotationLayer";
+        annotationDiv.style.setProperty("--scale-factor", `${viewport.scale}`);
+        wrapper.appendChild(annotationDiv);
+      }
 
       container.replaceChildren(wrapper);
-
       if (cancelled) return;
 
       renderTask = pdfPage.render({
-        annotationMode: pdfjsLib.AnnotationMode.ENABLE_FORMS,
+        annotationMode: settings.showAnnotations ? pdfjsLib.AnnotationMode.ENABLE_FORMS : pdfjsLib.AnnotationMode.DISABLE,
         canvasContext: ctx,
         transform: outputScale === 1 ? undefined : [outputScale, 0, 0, outputScale, 0, 0],
         viewport,
@@ -275,43 +255,47 @@ export function PdfViewer({ file, onBack }: PdfViewerProps) {
 
       await renderTask.promise;
 
-      const textContent = await pdfPage.getTextContent();
-      if (cancelled) return;
-
-      textLayerTask = (pdfjsLib as any).renderTextLayer({
-        container: textDiv,
-        textContentSource: textContent,
-        textContentItemsStr: [],
-        textDivs: [],
-        viewport,
-      });
-
-      await textLayerTask.promise;
-
-      const annotations = await pdfPage.getAnnotations();
-      if (cancelled || annotations.length === 0) {
-        annotationDiv.hidden = annotations.length === 0;
-        return;
+      /* Render text layer */
+      if (settings.enableTextSelection) {
+        const textDiv = wrapper.querySelector(".textLayer") as HTMLDivElement;
+        if (textDiv) {
+          const textContent = await pdfPage.getTextContent();
+          if (cancelled) return;
+          textLayerTask = (pdfjsLib as any).renderTextLayer({
+            container: textDiv,
+            textContentSource: textContent,
+            textContentItemsStr: [],
+            textDivs: [],
+            viewport,
+          });
+          await textLayerTask?.promise;
+        }
       }
 
-      const annotationLayer = new (pdfjsLib as any).AnnotationLayer({
-        div: annotationDiv,
-        page: pdfPage,
-        viewport: viewport.clone({ dontFlip: true }),
-      });
-
-      await annotationLayer.render({
-        annotations,
-        linkService: createPdfLinkService(pdf, setPage, totalPages),
-        renderForms: true,
-      });
+      /* Render annotation layer */
+      if (settings.showAnnotations) {
+        const annotationDiv = wrapper.querySelector(".annotationLayer") as HTMLDivElement;
+        if (annotationDiv) {
+          const annotations = await pdfPage.getAnnotations();
+          if (cancelled || annotations.length === 0) {
+            annotationDiv.hidden = annotations.length === 0;
+            return;
+          }
+          const annotationLayer = new (pdfjsLib as any).AnnotationLayer({
+            div: annotationDiv,
+            page: pdfPage,
+            viewport: viewport.clone({ dontFlip: true }),
+          });
+          await annotationLayer.render({
+            annotations,
+            linkService: createPdfLinkService(pdf, setPage, totalPages),
+            renderForms: true,
+          });
+        }
+      }
     };
 
-    render().catch((error) => {
-      if (!cancelled) {
-        console.error("Failed to render PDF page", error);
-      }
-    });
+    render().catch((error) => { if (!cancelled) console.error("Failed to render PDF page", error); });
 
     return () => {
       cancelled = true;
@@ -319,20 +303,19 @@ export function PdfViewer({ file, onBack }: PdfViewerProps) {
       textLayerTask?.cancel?.();
       containerRef.current?.replaceChildren();
     };
-  }, [page, pdf, totalPages, zoom]);
+  }, [page, pdf, totalPages, zoom, rotation, settings]);
 
+  /* Keyboard nav */
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight" || e.key === "ArrowDown") {
-        setPage((p) => Math.min(totalPages, p + 1));
-      } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
-        setPage((p) => Math.max(1, p - 1));
-      }
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") setPage((p) => Math.min(totalPages, p + 1));
+      else if (e.key === "ArrowLeft" || e.key === "ArrowUp") setPage((p) => Math.max(1, p - 1));
     };
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
   }, [totalPages]);
 
+  /* Ctrl+scroll zoom */
   useEffect(() => {
     const handleWheel = (e: WheelEvent) => {
       if (e.ctrlKey || e.metaKey) {
@@ -343,6 +326,17 @@ export function PdfViewer({ file, onBack }: PdfViewerProps) {
     document.addEventListener("wheel", handleWheel, { passive: false });
     return () => document.removeEventListener("wheel", handleWheel);
   }, []);
+
+  /* Print */
+  const handlePrint = useCallback(() => { if (pdf) printPdf(pdf); }, [pdf]);
+
+  /* Rotate */
+  const handleRotate = useCallback(() => { setRotation((r) => (r + 90) % 360); }, []);
+
+  /* Scroll direction class */
+  const scrollClass = settings.scrollDirection === "horizontal"
+    ? "flex flex-row items-center overflow-x-auto overflow-y-hidden"
+    : "flex flex-1 justify-center overflow-auto";
 
   return (
     <div className="flex h-screen flex-col bg-background">
@@ -363,10 +357,16 @@ export function PdfViewer({ file, onBack }: PdfViewerProps) {
           size="icon"
           aria-label="Toggle table of contents"
           aria-pressed={showToc}
-          onClick={() => setShowToc((open) => !open)}
+          onClick={() => setShowToc((o) => !o)}
         >
           <ListTree className="h-4 w-4" />
         </Button>
+        <PdfSettingsPanel
+          settings={settings}
+          onSettingsChange={setSettings}
+          onPrint={handlePrint}
+          onRotatePage={handleRotate}
+        />
       </ViewerToolbar>
 
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
@@ -379,7 +379,7 @@ export function PdfViewer({ file, onBack }: PdfViewerProps) {
           onSelect={handleTocSelect}
         />
 
-        <div ref={viewportRef} className="flex flex-1 justify-center overflow-auto p-4 md:p-8">
+        <div ref={viewportRef} className={`${scrollClass} p-4 md:p-8`}>
           <div ref={containerRef} className="shrink-0" />
         </div>
       </div>
