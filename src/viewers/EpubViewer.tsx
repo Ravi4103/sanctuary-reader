@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import ePub from "epubjs";
-import { ListTree, Type, Sun, Moon, Minus, Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { ListTree, Minus, Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { DocumentTocSidebar, type TocItem } from "@/components/DocumentTocSidebar";
 import { ViewerToolbar } from "@/components/ViewerToolbar";
 import { Button } from "@/components/ui/button";
