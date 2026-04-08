@@ -207,9 +207,9 @@ export function EpubViewer({ file, onBack }: EpubViewerProps) {
     return () => document.removeEventListener("keydown", handleKey);
   }, []);
 
+  const themeOrder: ThemeMode[] = ["original", "light", "sepia", "warm", "cool", "dark", "midnight"];
   const nextTheme = () => {
-    const order: ThemeMode[] = ["light", "sepia", "dark"];
-    setTheme(order[(order.indexOf(theme) + 1) % 3]);
+    setTheme(themeOrder[(themeOrder.indexOf(theme) + 1) % themeOrder.length]);
   };
 
   const handleTocSelect = (item: TocItem) => {
@@ -256,12 +256,24 @@ export function EpubViewer({ file, onBack }: EpubViewerProps) {
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
-        <Button variant="ghost" size="icon" onClick={() => setShowSettings(!showSettings)}>
-          <Type className="h-4 w-4" />
-        </Button>
-        <Button variant="ghost" size="icon" onClick={nextTheme}>
-          {theme === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-        </Button>
+        <div className="flex items-center gap-1">
+          {(Object.entries(themes) as [ThemeMode, typeof themes[ThemeMode]][]).map(([key, t]) => (
+            <Button
+              key={key}
+              variant={theme === key ? "secondary" : "ghost"}
+              size="sm"
+              className="h-7 text-[10px] px-2 gap-1"
+              onClick={() => setTheme(key)}
+              title={t.label}
+            >
+              <span
+                className="w-3 h-3 rounded-full border border-border"
+                style={{ backgroundColor: t.bg }}
+              />
+              <span className="hidden sm:inline">{t.label}</span>
+            </Button>
+          ))}
+        </div>
       </ViewerToolbar>
 
       {showSettings && (
