@@ -17,10 +17,11 @@ import {
   getHighlights, getSymbolAnnotations,
   type Highlight, type SymbolAnnotation,
 } from "@/lib/annotationStore";
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { toast } from "sonner";
 import type { FileEntry } from "@/lib/fileStore";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 /* ── TOC helpers ─────────────────────────────────────────────────── */
 
