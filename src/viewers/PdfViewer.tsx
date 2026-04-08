@@ -489,6 +489,34 @@ export function PdfViewer({ file, onBack }: PdfViewerProps) {
     return () => { cancelled = true; containerRef.current?.replaceChildren(); };
   }, [page, pdf, totalPages, zoom, rotation, settings, displayMode, highlights, symbolAnnotations]);
 
+  /* Scroll-based page tracking for continuous mode */
+  useEffect(() => {
+    if (displayMode !== "continuous" || !containerRef.current) return;
+    const pages = containerRef.current.querySelectorAll(".pdf-page");
+    if (pages.length === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let topPage: number | null = null;
+        let topY = Infinity;
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const rect = entry.boundingClientRect;
+            if (rect.top < topY) {
+              topY = rect.top;
+              topPage = Number((entry.target as HTMLElement).dataset.pageNumber);
+            }
+          }
+        });
+        if (topPage) setPage(topPage);
+      },
+      { root: viewportRef.current, threshold: 0.1 },
+    );
+
+    pages.forEach((p) => observer.observe(p));
+    return () => observer.disconnect();
+  }, [displayMode, pdf, totalPages, zoom, rotation, settings, highlights, symbolAnnotations]);
+
   /* Keyboard nav */
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -607,7 +635,7 @@ export function PdfViewer({ file, onBack }: PdfViewerProps) {
         )}
         {sidebarTab === "bookmarks" && (
           <aside className="absolute inset-y-0 left-0 z-30 flex w-56 max-w-[85vw] flex-col border-r border-border glass-surface md:relative md:max-w-none md:shrink-0">
-            <BookmarkPanel fileId={file.id} currentPage={page} onPageSelect={(p) => navigateToPage(p)} />
+            <BookmarkPanel fileId={file.id} currentPage={page} onPageSelect={(p) => navigateToPage(p)} version={annotationVersion} />
           </aside>
         )}
         {sidebarTab === "highlights" && (
@@ -616,6 +644,7 @@ export function PdfViewer({ file, onBack }: PdfViewerProps) {
               fileId={file.id} currentPage={page}
               onPageSelect={(p) => navigateToPage(p)}
               activeColor={highlightColor} onColorChange={setHighlightColor}
+              version={annotationVersion}
             />
           </aside>
         )}
@@ -627,6 +656,7 @@ export function PdfViewer({ file, onBack }: PdfViewerProps) {
               activeSymbol={activeSymbol} onSymbolChange={setActiveSymbol}
               placingSymbol={placingSymbol}
               onTogglePlacing={() => setPlacingSymbol((p) => !p)}
+              version={annotationVersion}
             />
           </aside>
         )}

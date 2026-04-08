@@ -25,11 +25,12 @@ interface HighlightPanelProps {
   onPageSelect: (page: number) => void;
   activeColor: string;
   onColorChange: (color: string) => void;
+  version?: number;
 }
 
 export function HighlightPanel({
   fileId, currentPage, onPageSelect,
-  activeColor, onColorChange,
+  activeColor, onColorChange, version,
 }: HighlightPanelProps) {
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [showCustom, setShowCustom] = useState(false);
@@ -41,7 +42,7 @@ export function HighlightPanel({
     setHighlights(await getHighlights(fileId));
   }, [fileId]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => { reload(); }, [reload, version]);
 
   const handleRemove = async (id: string) => {
     await removeHighlight(id);

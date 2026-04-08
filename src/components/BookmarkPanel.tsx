@@ -13,9 +13,10 @@ interface BookmarkPanelProps {
   fileId: string;
   currentPage: number;
   onPageSelect: (page: number) => void;
+  version?: number;
 }
 
-export function BookmarkPanel({ fileId, currentPage, onPageSelect }: BookmarkPanelProps) {
+export function BookmarkPanel({ fileId, currentPage, onPageSelect, version }: BookmarkPanelProps) {
   const [bookmarks, setBookmarks] = useState<BookmarkType[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState("");
@@ -24,7 +25,7 @@ export function BookmarkPanel({ fileId, currentPage, onPageSelect }: BookmarkPan
     setBookmarks(await getBookmarks(fileId));
   }, [fileId]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => { reload(); }, [reload, version]);
 
   const isCurrentPageBookmarked = bookmarks.some((b) => b.page === currentPage);
 
