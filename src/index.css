@@ -127,8 +127,12 @@
   white-space: pre;
   cursor: text;
   transform-origin: 0% 0%;
-  line-height: 1;
+  line-height: 1.2;
   pointer-events: all;
+}
+
+.textLayer span {
+  padding: 0.05em 0;
 }
 
 .textLayer span.markedContent {
@@ -150,7 +154,12 @@
 }
 
 .textLayer ::selection {
-  background: rgba(6, 58, 164, 0.35);
+  background: rgba(59, 130, 246, 0.35);
+  mix-blend-mode: multiply;
+}
+
+.textLayer ::-moz-selection {
+  background: rgba(59, 130, 246, 0.35);
   mix-blend-mode: multiply;
 }
 
